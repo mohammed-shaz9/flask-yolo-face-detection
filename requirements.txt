@@ -6,3 +6,5 @@ torchvision
 opencv-python-headless
 Pillow
 dlib
+streamlit-webrtc
+av
