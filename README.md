@@ -4,7 +4,7 @@ emoji: 🚀
 colorFrom: blue
 colorTo: green
 sdk: docker
-app_file: app.py
+app_file: src/main.py
 pinned: false
 ---
 
@@ -20,30 +20,29 @@ pinned: false
    ```
 2. **Launch the App**:
    ```bash
-   streamlit run app.py
+   python src/main.py
    ```
-3. **Access**: Open your browser to **http://localhost:8501**.
+3. **Access**: Open your browser to **http://localhost:7860**.
 
 ---
 
 ## Features
 
-- **🎥 Live Video Stream**: Real-time detection directly from your webcam using WebRTC.
-- **📁 Image Upload**: Drag-and-drop any image to analyze it.
-- **📸 Quick Photo**: Capture a single frame from your camera for instant processing.
-- **🔍 Dual Detection Modes**:
+- **🎥 API & Web Interface**: Flask-based RESTful API with a web UI.
+- **📁 Image Upload**: Simple HTML/JS interface for uploading images.
+- **� Dual Detection Modes**:
   - **Face Detection**: Specialized mode for faces with **68-point facial landmarks** (green dots).
   - **All Objects**: Detects 80 different categories (people, cars, animals, etc.) using YOLOv8.
-- **⚙️ Adjustable Settings**: Change confidence and IOU thresholds live from the sidebar.
+- **⚙️ Backend Processing**: Fast backend inference using YOLOv8 and Dlib.
 
 ---
 
 ## Technical Stack
 
-- **Frontend/Backend**: [Streamlit](https://streamlit.io/)
+- **Frontend**: HTML5, JavaScript (Vanilla)
+- **Backend**: [Flask](https://flask.palletsprojects.com/) (Python)
 - **AI Model**: [YOLOv8](https://github.com/ultralytics/ultralytics) (Ultralytics)
 - **Face Landmarks**: [Dlib](http://dlib.net/) (68-point predictor)
-- **Live Stream**: [Streamlit-WebRTC](https://github.com/whitphx/streamlit-webrtc)
 - **Deployment**: Dockerized for Hugging Face Spaces.
 
 ---
@@ -52,19 +51,18 @@ pinned: false
 
 ### Prerequisites
 - Python 3.10 or 3.11.
-- Webcam (for live features).
+- CMake (for Dlib).
 
 ### Project Structure
 ```
 .
-├── app.py                # Main Streamlit application
-├── Dockerfile            # Container configuration for Cloud
+├── src/                  # Flask Application Source
+│   ├── main.py           # Entry point
+│   └── routes/           # API Routes
+├── Dockerfile            # Container configuration
 ├── requirements.txt      # Python dependencies
-├── yolov8n.pt           # YOLOv8 model weights
-├── src/
-│   └── routes/
-│       └── shape_predictor_68_face_landmarks.dat # Dlib model
-└── dataset/              # Original training data (optional)
+├── best.pt               # YOLOv8 Fine-tuned Model
+└── README.md             # Documentation
 ```
 
 ## Concepts for Beginners
