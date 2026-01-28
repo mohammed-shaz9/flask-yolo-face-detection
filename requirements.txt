@@ -7,3 +7,6 @@ opencv-python-headless
 Pillow
 streamlit-webrtc
 av
+flask
+gunicorn
+dlib

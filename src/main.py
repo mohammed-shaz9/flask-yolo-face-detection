@@ -1,4 +1,9 @@
 import os
+import sys
+
+# Ensure 'src' is in path so imports work when running from root
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from flask import Flask, send_from_directory
 from routes.face_detection import face_detection_bp
 

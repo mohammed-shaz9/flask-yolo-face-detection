@@ -1,4 +1,5 @@
 import os
+import time
 import cv2
 import numpy as np
 from flask import Blueprint, request, jsonify, Response
@@ -6,39 +7,38 @@ from ultralytics import YOLO
 from PIL import Image
 import base64
 import io
-import dlib # Add this line
-
 face_detection_bp = Blueprint('face_detection', __name__)
 
-# Load the YOLOv8 model
-# Prefer trained face-detection weights if available; otherwise fall back to generic COCO weights
 _routes_dir = os.path.dirname(__file__)
-_project_root = os.path.abspath(os.path.join(_routes_dir, '..', '..'))
-_candidates = [
-    os.path.join(_project_root, 'runs', 'detect', 'train_epochs202', 'weights', 'best.pt'),
-    os.path.join(_project_root, 'runs', 'detect', 'train7', 'weights', 'best.pt'),
-    os.path.join(_project_root, 'src', 'yolov8n.pt'),  # fallback to generic model in src
-    os.path.join(_routes_dir, '..', 'yolov8n.pt'),     # legacy fallback
-]
-_model_path = next((p for p in _candidates if os.path.exists(p)), _candidates[-1])
-model = YOLO(_model_path)
-# Preload generic COCO model once to avoid reloading from disk on every fallback
-_generic_model = None
-_generic_path = os.path.join(_project_root, 'src', 'yolov8n.pt')
-if os.path.exists(_generic_path) and _generic_path != _model_path:
-    _generic_model = YOLO(_generic_path)
 
-# Determine which classes should be considered "faces" for landmarking
+try:
+    import dlib
+    DLIB_AVAILABLE = True
+except ImportError:
+    DLIB_AVAILABLE = False
+
+# Dlib logic - only initialize if available
+if DLIB_AVAILABLE:
+    _detector = dlib.get_frontal_face_detector()
+    _predictor_path = os.path.join(_routes_dir, 'shape_predictor_68_face_landmarks.dat')
+    _predictor = dlib.shape_predictor(_predictor_path)
+else:
+    _detector = None
+    _predictor = None
+_project_root = os.path.abspath(os.path.join(_routes_dir, '..', '..'))
+model_path = os.path.join(_project_root, 'best.pt')
+
+if os.path.exists(model_path):
+    model = YOLO(model_path)
+else:
+    # Fallback if best.pt is missing (rare in this flow)
+    model = YOLO('yolov8n.pt')
+
+# Names for class filtering
 _names = model.names if hasattr(model, 'names') else {}
 _face_class_ids = {i for i, n in _names.items() if isinstance(n, str) and 'face' in n.lower()}
 if not _face_class_ids:
-    # If using a general COCO model, fall back to 'person' class
     _face_class_ids = {i for i, n in _names.items() if isinstance(n, str) and n.lower() == 'person'}
-
-# Load dlib's face detector and shape predictor
-_detector = dlib.get_frontal_face_detector() # Add this line
-_predictor_path = os.path.join(_routes_dir, 'shape_predictor_68_face_landmarks.dat') # Add this line
-_predictor = dlib.shape_predictor(_predictor_path) # Add this line
 
 
 def _decode_image_from_request(file_storage):
@@ -141,11 +141,23 @@ def detect_frame():
         frame_resized = cv2.resize(frame_rgb, (640, 480))
 
         # Run detection with thresholds
+        t0 = time.time()
         results = model(frame_resized, conf=0.25, iou=0.6, verbose=False)
 
-        # Fallback to generic model if nothing is detected
-        if (not results or results[0].boxes is None or len(results[0].boxes) == 0) and _generic_model:
-            results = _generic_model(frame_resized, conf=0.25, iou=0.6, verbose=False)
+        # Fallback to generic model if nothing is detected - This enables OBJECT detection
+        if (not results or results[0].boxes is None or len(results[0].boxes) == 0):
+             # Load generic model for object detection if specific model fails
+             try:
+                 generic_model = YOLO('yolov8n.pt')
+                 results = generic_model(frame_resized, conf=0.25, iou=0.6, verbose=False)
+                 mode_text = "Mode: Object Detection (Fallback)"
+             except:
+                 mode_text = "Mode: Face Detection"
+        else:
+             mode_text = "Mode: Face Detection (Best)"
+        
+        t1 = time.time()
+        fps = 1.0 / (t1 - t0) if (t1 - t0) > 0 else 0
 
         # Process results
         detections = []
@@ -158,9 +170,9 @@ def detect_frame():
                     class_id = int(box.cls[0].cpu().numpy())
                     class_name = _names.get(class_id, str(class_id))
 
-                    # Keep only face/person classes
-                    if _face_class_ids and class_id not in _face_class_ids:
-                        continue
+                    # Filter removed to allow ALL objects (Face + Object detection)
+                    # if _face_class_ids and class_id not in _face_class_ids:
+                    #     continue
 
                     # Minimum box area filter
                     if (x2 - x1) * (y2 - y1) < 10 * 10:
@@ -176,21 +188,26 @@ def detect_frame():
         annotated_frame = results[0].plot() if results else frame_resized
 
         # Convert annotated_frame to grayscale for dlib
-        gray_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2GRAY)
+        # Only run if Dlib is available
+        if DLIB_AVAILABLE:
+            gray_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2GRAY)
+    
+            # Iterate through filtered detections and apply dlib landmark detection
+            for detection in detections:
+                x1, y1, x2, y2 = detection['bbox']
+                dlib_rect = dlib.rectangle(x1, y1, x2, y2)
+                try:
+                    landmarks = _predictor(gray_frame, dlib_rect)
+                    for i in range(0, landmarks.num_parts):
+                        x = landmarks.part(i).x
+                        y = landmarks.part(i).y
+                        cv2.circle(annotated_frame, (x, y), 1, (0, 255, 0), -1)  # Green dots for landmarks
+                except Exception:
+                    continue
 
-        # Iterate through filtered detections and apply dlib landmark detection
-        for detection in detections:
-            x1, y1, x2, y2 = detection['bbox']
-            dlib_rect = dlib.rectangle(x1, y1, x2, y2)
-            try:
-                landmarks = _predictor(gray_frame, dlib_rect)
-                for i in range(0, landmarks.num_parts):
-                    x = landmarks.part(i).x
-                    y = landmarks.part(i).y
-                    cv2.circle(annotated_frame, (x, y), 1, (0, 255, 0), -1)  # Green dots for landmarks
-            except Exception:
-                # Skip landmarking if predictor fails on this region
-                continue
+        # Add FPS and Mode info to the frame
+        cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(annotated_frame, mode_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
         # Convert back to base64
         frame_base64 = _encode_image_to_base64_bgr(annotated_frame)
@@ -199,6 +216,8 @@ def detect_frame():
             'success': True,
             'detections': detections,
             'total_detections': len(detections),
+            'fps': fps,
+            'mode': mode_text,
             'processed_frame': f'data:image/jpeg;base64,{frame_base64}'
         })
 
