@@ -4,7 +4,6 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PORT=7860
 
 # Install system dependencies required for OpenCV and dlib
 RUN apt-get update && apt-get install -y \
@@ -22,15 +21,13 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-# Using the CPU version of torch to keep the image smaller and avoid memory issues on free tiers
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .
 
-# Expose the port Hugging Face Spaces expects
+# Expose the standard Streamlit port
 EXPOSE 7860
 
-# Start the application using Gunicorn
-# Adjust the number of workers based on memory availability
-CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "1", "--timeout", "120", "src.main:app"]
+# Start the Streamlit application
+CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]
