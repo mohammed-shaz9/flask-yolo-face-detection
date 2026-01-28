@@ -1,3 +1,12 @@
+---
+title: Yolo Face Detection
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # YOLOv8 Face Detection Project
 
 **Quick-Start (for Reviewers/Examiners)**
