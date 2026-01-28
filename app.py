@@ -4,7 +4,11 @@ import numpy as np
 import os
 from ultralytics import YOLO
 from PIL import Image
-import dlib
+try:
+    import dlib
+    DLIB_AVAILABLE = True
+except ImportError:
+    DLIB_AVAILABLE = False
 
 # Set page configuration
 st.set_page_config(page_title="YOLOv8 Face Detection", layout="wide")
@@ -35,7 +39,9 @@ def load_models():
                  _predictor_path = os.path.join(root, 'shape_predictor_68_face_landmarks.dat')
                  break
                  
-    predictor = dlib.shape_predictor(_predictor_path)
+    predictor = None
+    if DLIB_AVAILABLE:
+        predictor = dlib.shape_predictor(_predictor_path)
     return model, predictor
 
 try:
@@ -81,16 +87,17 @@ if uploaded_file is not None:
                 # Get coordinates
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
                 
-                # Apply dlib landmarks within the box
-                dlib_rect = dlib.rectangle(x1, y1, x2, y2)
-                try:
-                    landmarks = predictor(gray_image, dlib_rect)
-                    for i in range(0, landmarks.num_parts):
-                        x = landmarks.part(i).x
-                        y = landmarks.part(i).y
-                        cv2.circle(annotated_image, (x, y), 2, (0, 255, 0), -1)
-                except:
-                    continue
+                if DLIB_AVAILABLE:
+                    # Apply dlib landmarks within the box
+                    dlib_rect = dlib.rectangle(x1, y1, x2, y2)
+                    try:
+                        landmarks = predictor(gray_image, dlib_rect)
+                        for i in range(0, landmarks.num_parts):
+                            x = landmarks.part(i).x
+                            y = landmarks.part(i).y
+                            cv2.circle(annotated_image, (x, y), 2, (0, 255, 0), -1)
+                    except:
+                        continue
 
     with col2:
         st.subheader("Processed Image")
