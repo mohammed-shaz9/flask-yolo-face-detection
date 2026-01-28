@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500" font-family="Helvetica,Arial,sans-serif">
+  <style>
+    .title{font-size:22px;font-weight:bold}
+    .label{font-size:13px;font-weight:bold}
+    .imgBox{fill:none;stroke:#dc3545;stroke-width:2}
+    .caption{font-size:14px;fill:#555}
+  </style>
+  <text x="450" y="30" text-anchor="middle" class="title">Failure Case Examples</text>
+
+  <g>
+    <image x="80" y="70" width="330" height="180" href="fig5_nodetect_lowlight.jpg" />
+    <rect x="80" y="70" width="330" height="180" class="imgBox"/>
+    <text x="245" y="270" text-anchor="middle" class="label">(a) Low-light miss</text>
+  </g>
+  <g>
+    <image x="480" y="70" width="330" height="180" href="fig5_partial_occlusion.jpg" />
+    <rect x="480" y="70" width="330" height="180" class="imgBox"/>
+    <text x="645" y="270" text-anchor="middle" class="label">(b) Heavy occlusion</text>
+  </g>
+
+  <text x="450" y="480" text-anchor="middle" class="caption">Figure 5: Example failure cases highlighting system limitations.</text>
+</svg>

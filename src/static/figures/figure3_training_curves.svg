@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600" viewBox="0 0 1000 600" font-family="Helvetica,Arial,sans-serif">
+  <style>
+    .title { font-size: 26px; font-weight: bold; }
+    .axis { stroke:#333; stroke-width:2; }
+    .grid { stroke:#ccc; stroke-dasharray:4 4; stroke-width:1; }
+    .train { stroke:#4e73df; stroke-width:3; fill:none; }
+    .val   { stroke:#224abe; stroke-width:3; fill:none; }
+    .map50 { stroke:#28a745; stroke-width:3; fill:none; stroke-dasharray:6 4; }
+    .label { font-size:14px; }
+  </style>
+
+  <text x="500" y="40" text-anchor="middle" class="title">Training &amp; Validation Curves</text>
+
+  <!-- Axes -->
+  <line x1="100" y1="500" x2="900" y2="500" class="axis" />
+  <line x1="100" y1="100" x2="100" y2="500" class="axis" />
+
+  <!-- Grid horizontal -->
+  <g>
+    <!-- 5 grid lines -->
+    <line x1="100" y1="420" x2="900" y2="420" class="grid" />
+    <line x1="100" y1="340" x2="900" y2="340" class="grid" />
+    <line x1="100" y1="260" x2="900" y2="260" class="grid" />
+    <line x1="100" y1="180" x2="900" y2="180" class="grid" />
+    <line x1="100" y1="100" x2="900" y2="100" class="grid" />
+  </g>
+
+  <!-- Labels -->
+  <text x="50" y="260" transform="rotate(-90 50,260)" class="label">Loss / mAP</text>
+  <text x="500" y="540" text-anchor="middle" class="label">Epochs</text>
+
+  <!-- Legend -->
+  <rect x="650" y="110" width="12" height="12" fill="none" stroke="#4e73df" stroke-width="3" />
+  <text x="670" y="120" class="label">Training Loss</text>
+
+  <rect x="650" y="135" width="12" height="12" fill="none" stroke="#224abe" stroke-width="3" />
+  <text x="670" y="145" class="label">Validation Loss</text>
+
+  <rect x="650" y="160" width="12" height="12" fill="none" stroke="#28a745" stroke-width="3" />
+  <text x="670" y="170" class="label">mAP50</text>
+
+  <!-- Dummy curves (placeholder sine/cos for now) -->
+  <polyline class="train" points="100,480 200,420 300,350 400,300 500,250 600,220 700,200 800,180 900,170" />
+  <polyline class="val" points="100,480 200,430 300,380 400,340 500,300 600,280 700,260 800,240 900,230" />
+  <polyline class="map50" points="100,450 200,400 300,340 400,300 500,270 600,250 700,235 800,225 900,220" />
+
+  <text x="500" y="580" text-anchor="middle" font-size="14px" fill="#666">Figure 3: Training and validation curves showing model convergence and generalization.</text>
+</svg>

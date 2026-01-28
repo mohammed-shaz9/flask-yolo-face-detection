@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" font-family="Helvetica,Arial,sans-serif">
+  <style>
+    .title{font-size:22px;font-weight:bold}
+    .axis{stroke:#333;stroke-width:2}
+    .grid{stroke:#ddd;stroke-dasharray:3 3;stroke-width:1}
+    .lbl{font-size:12px}
+  </style>
+  <text x="400" y="30" text-anchor="middle" class="title">Accuracy vs CPU Latency</text>
+  <!-- axes -->
+  <line x1="80" y1="420" x2="750" y2="420" class="axis"/>
+  <line x1="80" y1="420" x2="80" y2="100" class="axis"/>
+  <!-- dots -->
+  <circle cx="200" cy="290" r="6" fill="#4e73df"/>
+  <text x="200" y="280" class="lbl" text-anchor="middle">YOLOv8n 80%</text>
+  <circle cx="300" cy="260" r="6" fill="#224abe"/>
+  <text x="300" y="250" class="lbl" text-anchor="middle">RetinaFace 82%</text>
+  <circle cx="550" cy="360" r="6" fill="#28a745"/>
+  <text x="550" y="350" class="lbl" text-anchor="middle">MediaPipe 75%</text>
+  <circle cx="250" cy="230" r="6" fill="#ff7f0e"/>
+  <text x="250" y="220" class="lbl" text-anchor="middle">Fine-tuned 85%</text>
+  <!-- caption -->
+  <text x="400" y="470" text-anchor="middle" class="lbl">Figure 4: Comparative benchmarking of accuracy vs CPU latency.</text>
+</svg>

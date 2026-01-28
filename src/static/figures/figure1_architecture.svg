@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" font-family="Helvetica,Arial,sans-serif">
+  <style>
+    .title { font-size: 28px; font-weight: bold; }
+    .box   { fill:#f5f9ff; stroke:#4e73df; stroke-width:2; rx:8; ry:8; }
+    .label { font-size:16px; }
+    .lat   { font-size:14px; fill:#dc3545; }
+    .arrow { stroke:#333; marker-end:url(#arrowhead); stroke-width:2; }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <text x="600" y="40" text-anchor="middle" class="title">Hybrid Detection System Architecture &amp; Latency Breakdown</text>
+
+  <!-- Client boxes -->
+  <rect x="50" y="150" width="200" height="80" class="box" />
+  <text x="150" y="185" text-anchor="middle" class="label">Webcam<br/>(HTML5 Media)</text>
+
+  <rect x="300" y="150" width="200" height="80" class="box" />
+  <text x="400" y="185" text-anchor="middle" class="label">HTML5 Canvas<br/>Frame Encoding</text>
+
+  <!-- Server boxes -->
+  <rect x="550" y="100" width="250" height="80" class="box" />
+  <text x="675" y="135" text-anchor="middle" class="label">Flask REST API</text>
+
+  <rect x="550" y="230" width="250" height="80" class="box" />
+  <text x="675" y="265" text-anchor="middle" class="label">YOLOv8n<br/>Face Detector</text>
+
+  <rect x="850" y="230" width="250" height="80" class="box" />
+  <text x="975" y="265" text-anchor="middle" class="label">dlib 68-pt<br/>Landmark Predictor</text>
+
+  <!-- Overlay back to client -->
+  <rect x="300" y="350" width="200" height="80" class="box" />
+  <text x="400" y="385" text-anchor="middle" class="label">JSON Results</text>
+
+  <rect x="50" y="350" width="200" height="80" class="box" />
+  <text x="150" y="385" text-anchor="middle" class="label">Canvas Overlay<br/>(Bounding boxes + landmarks)</text>
+
+  <!-- Arrows and latency labels -->
+  <!-- Client → API -->
+  <line x1="500" y1="190" x2="550" y2="140" class="arrow" />
+  <text x="525" y="155" class="lat" text-anchor="middle">25–30 ms</text>
+
+  <!-- API → Detector -->
+  <line x1="675" y1="180" x2="675" y2="230" class="arrow" />
+  <text x="690" y="210" class="lat">105–110 ms</text>
+
+  <!-- Detector → Landmark -->
+  <line x1="800" y1="270" x2="850" y2="270" class="arrow" />
+
+  <!-- Landmark → JSON -->
+  <line x1="850" y1="310" x2="500" y2="390" class="arrow" />
+  <text x="680" y="350" class="lat" text-anchor="middle">3–5 ms</text>
+
+  <!-- JSON → Overlay -->
+  <line x1="300" y1="390" x2="250" y2="390" class="arrow" />
+
+  <!-- Fallback note -->
+  <text x="675" y="525" text-anchor="middle" class="label">Fallback to COCO model on unknown frame<br/>First-frame latency 450 ms</text>
+
+  <text x="600" y="580" text-anchor="middle" font-size="14px" fill="#666">Figure 1: Hybrid detection system architecture with latency breakdown.</text>
+</svg>

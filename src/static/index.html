@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Detection App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(120deg, #4e73df, #224abe);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .mode-selector {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .mode-btn {
+            background: #f8f9fa;
+            color: #333;
+            border: 2px solid #ddd;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #4e73df, #224abe);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .mode-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .upload-section {
+            border: 3px dashed #ddd;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-section:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+
+        .upload-section.dragover {
+            border-color: #667eea;
+            background-color: #f0f4ff;
+        }
+
+        .camera-section {
+            display: none;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .camera-container {
+            position: relative;
+            display: inline-block;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        #overlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #videoElement {
+            width: 640px;
+            height: 480px;
+            background: #000;
+        }
+
+        .camera-controls {
+            margin-top: 20px;
+        }
+
+        .camera-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            margin: 0 10px;
+            transition: transform 0.3s ease;
+        }
+
+        .camera-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .camera-btn.stop {
+            background: #dc3545;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .upload-btn {
+            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .upload-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .upload-text {
+            margin-top: 15px;
+            color: #666;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results-header {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .detection-count {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .image-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .processed-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .detection-list {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .detection-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .detection-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #c33;
+        }
+
+        .reset-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .reset-btn:hover {
+            background: #5a6268;
+        }
+
+        .live-stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .fps-counter {
+            font-size: 1.1em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .live-detection-count {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .upload-section {
+                padding: 20px;
+            }
+
+            #videoElement {
+                width: 100%;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Face Detection App</h1>
+            <p>Upload an image or use live camera to detect people and faces using AI</p>
+        </div>
+
+        <div class="mode-selector">
+            <button class="mode-btn active" onclick="switchMode('upload')">📁 Upload Image</button>
+            <button class="mode-btn" onclick="switchMode('camera')">📹 Live Camera</button>
+        </div>
+
+        <div class="upload-section" id="uploadSection">
+            <input type="file" id="fileInput" class="file-input" accept="image/*">
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                📁 Choose Image
+            </button>
+            <div class="upload-text">
+                or drag and drop an image here
+            </div>
+        </div>
+
+        <div class="camera-section" id="cameraSection">
+            <div class="camera-container">
+                <video id="videoElement" autoplay muted></video>
+                <canvas id="overlayCanvas"></canvas>
+            </div>
+            <div class="camera-controls">
+                <button class="camera-btn" id="startCameraBtn" onclick="startCamera()">🎥 Start Camera</button>
+                <button class="camera-btn stop" id="stopCameraBtn" onclick="stopCamera()" style="display: none;">⏹️ Stop Camera</button>
+                <button class="camera-btn" id="startDetectionBtn" onclick="startLiveDetection()" style="display: none;">🔍 Start Detection</button>
+                <button class="camera-btn stop" id="stopDetectionBtn" onclick="stopLiveDetection()" style="display: none;">⏹️ Stop Detection</button>
+            </div>
+            <div class="live-stats" id="liveStats" style="display: none;">
+                <div class="fps-counter" id="fpsCounter">FPS: 0</div>
+                <div class="live-detection-count" id="liveDetectionCount">Detections: 0</div>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing your image...</p>
+        </div>
+
+        <div class="results" id="results">
+            <div class="results-header">
+                <div class="detection-count" id="detectionCount"></div>
+            </div>
+            
+            <div class="image-container">
+                <img id="processedImage" class="processed-image" alt="Processed image">
+            </div>
+            
+            <div class="detection-list" id="detectionList"></div>
+            
+            <button class="reset-btn" onclick="resetApp()">🔄 Upload Another Image</button>
+        </div>
+
+        <div class="error" id="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const uploadSection = document.getElementById('uploadSection');
+        const cameraSection = document.getElementById('cameraSection');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+        const processedImage = document.getElementById('processedImage');
+        const detectionCount = document.getElementById('detectionCount');
+        const detectionList = document.getElementById('detectionList');
+        const videoElement = document.getElementById('videoElement');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const stopCameraBtn = document.getElementById('stopCameraBtn');
+        const startDetectionBtn = document.getElementById('startDetectionBtn');
+        const stopDetectionBtn = document.getElementById('stopDetectionBtn');
+        const liveStats = document.getElementById('liveStats');
+        const fpsCounter = document.getElementById('fpsCounter');
+        const liveDetectionCount = document.getElementById('liveDetectionCount');
+
+        let stream = null;
+        let detectionInterval = null;
+        let frameCount = 0;
+        let lastTime = Date.now();
+        let currentFPS = 0;
+
+        // File input change handler
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // Drag and drop handlers
+        uploadSection.addEventListener('dragover', handleDragOver);
+        uploadSection.addEventListener('dragleave', handleDragLeave);
+        uploadSection.addEventListener('drop', handleDrop);
+
+        function switchMode(mode) {
+            // Update button states
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Show/hide sections
+            if (mode === 'upload') {
+                uploadSection.style.display = 'block';
+                cameraSection.style.display = 'none';
+                stopCamera();
+                resetApp();
+            } else {
+                uploadSection.style.display = 'none';
+                cameraSection.style.display = 'block';
+                results.style.display = 'none';
+                error.style.display = 'none';
+            }
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelect();
+            }
+        }
+
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (file) {
+                uploadImage(file);
+            }
+        }
+
+        function uploadImage(file) {
+            // Hide previous results and errors
+            results.style.display = 'none';
+            error.style.display = 'none';
+            uploadSection.style.display = 'none';
+            loading.style.display = 'block';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/detect', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    showError(data.error || 'An error occurred during processing');
+                }
+            })
+            .catch(err => {
+                loading.style.display = 'none';
+                showError('Network error: ' + err.message);
+            });
+        }
+
+        function displayResults(data) {
+            // Update detection count
+            const count = data.total_detections;
+            detectionCount.textContent = `Found ${count} detection${count !== 1 ? 's' : ''}`;
+
+            // Display processed image
+            processedImage.src = data.processed_image;
+
+            // Display detection details
+            detectionList.innerHTML = '';
+            if (data.detections.length > 0) {
+                data.detections.forEach((detection, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'detection-item';
+                    item.innerHTML = `
+                        <strong>Detection ${index + 1}:</strong> ${detection.class}<br>
+                        <strong>Confidence:</strong> ${(detection.confidence * 100).toFixed(1)}%<br>
+                        <strong>Location:</strong> (${detection.bbox[0]}, ${detection.bbox[1]}) to (${detection.bbox[2]}, ${detection.bbox[3]})
+                    `;
+                    detectionList.appendChild(item);
+                });
+            } else {
+                detectionList.innerHTML = '<div class="detection-item">No people detected in this image.</div>';
+            }
+
+            results.style.display = 'block';
+        }
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: 640, 
+                        height: 480,
+                        facingMode: 'user'
+                    } 
+                });
+                videoElement.srcObject = stream;
+                videoElement.load(); // Ensure the video element is reloaded
+                startCameraBtn.style.display = 'none';
+                stopCameraBtn.style.display = 'inline-block';
+                startDetectionBtn.style.display = 'inline-block';
+            } catch (err) {
+                showError('Could not access camera: ' + err.message);
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        videoElement.srcObject = null;
+        
+        // Clear the video element and overlay canvas
+        const overlayCtx = overlayCanvas.getContext('2d');
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        videoElement.pause();
+            startCameraBtn.style.display = 'inline-block';
+            stopCameraBtn.style.display = 'none';
+            startDetectionBtn.style.display = 'none';
+            stopDetectionBtn.style.display = 'none';
+            liveStats.style.display = 'none';
+            stopLiveDetection();
+        }
+
+        function startLiveDetection() {
+            if (!stream) return;
+            startDetectionBtn.style.display = 'none';
+            stopDetectionBtn.style.display = 'inline-block';
+            liveStats.style.display = 'block';
+            isDetecting = true;
+            processFrame(); // kick off recursive chain
+        }
+
+        function stopLiveDetection() {
+            isDetecting = false;
+            startDetectionBtn.style.display = 'inline-block';
+            stopDetectionBtn.style.display = 'none';
+            liveStats.style.display = 'none';
+        }
+
+        async function processFrame() {
+            if (!isDetecting || !stream || videoElement.paused || videoElement.ended) {
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            ctx.drawImage(videoElement, 0, 0);
+
+            const frameData = canvas.toDataURL('image/jpeg', 0.8);
+
+            try {
+                const response = await fetch('/api/detect_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ frame: frameData })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    frameCount++;
+                    const currentTime = Date.now();
+                    if (currentTime - lastTime >= 1000) {
+                        currentFPS = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                        fpsCounter.textContent = `FPS: ${currentFPS}`;
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+                    liveDetectionCount.textContent = `Detections: ${data.total_detections}`;
+
+                    const img = new Image();
+                    img.onload = function() {
+                        const overlayCtx = overlayCanvas.getContext('2d');
+                        overlayCanvas.width = videoElement.videoWidth;
+                        overlayCanvas.height = videoElement.videoHeight;
+                        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        overlayCtx.drawImage(img, 0, 0, overlayCanvas.width, overlayCanvas.height);
+                    };
+                    img.src = data.processed_frame;
+                }
+            } catch (err) {
+                console.error('Detection error:', err);
+            }
+
+            requestAnimationFrame(processFrame); // schedule next frame detection
+        }
+
+        function showError(message) {
+            error.textContent = message;
+            error.style.display = 'block';
+            if (uploadSection.style.display !== 'none') {
+                uploadSection.style.display = 'block';
+            }
+        }
+
+        function resetApp() {
+            results.style.display = 'none';
+            error.style.display = 'none';
+            uploadSection.style.display = 'block';
+            fileInput.value = '';
+        }
+    </script>
+</body>
+</html>

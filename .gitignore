@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+dataset/
+runs/
+*.whl
+*.tar.gz
+val_output.txt
+organize_dataset_output.txt
+node_modules/
+.dockerignore
