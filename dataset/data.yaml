@@ -1,0 +1,7 @@
+path: C:\Users\SHAZ\Downloads\face_detection_project\home\ubuntu\face_detection_project_zip\dataset
+train: images/train
+val: images/val
+test: images/test
+
+nc: 1
+names: ['face']
