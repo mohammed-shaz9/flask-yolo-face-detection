@@ -1,0 +1,14 @@
+# .dockerignore
+# This file tells Railway what to skip during the build.
+# These files will STAY on GitHub for users to download in the ZIP, 
+# but Railway will ignore them so the build doesn't timeout or error.
+
+dataset/
+runs/detect/*/train_batch*
+runs/detect/*/val_batch*
+runs/detect/*/events.out.tfevents*
+venv/
+__pycache__/
+.git/
+*.whl
+*.tar.gz
