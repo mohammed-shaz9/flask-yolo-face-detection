@@ -23,14 +23,19 @@ _face_class_ids = set()
 
 
 def get_model():
-    """Lazy load the YOLO model on first use."""
+    """Lazy load the YOLO model on first use with memory optimizations."""
     global _model, _model_names, _face_class_ids
     
     if _model is not None:
         return _model
     
     try:
+        import gc
+        import torch
         from ultralytics import YOLO
+        
+        # Force CPU mode to reduce memory usage
+        torch.set_num_threads(1)
         
         model_path = os.path.join(_project_root, 'best.pt')
         model_path_fallback = os.path.join(_project_root, 'yolov8n.pt')
@@ -60,6 +65,9 @@ def get_model():
             _model = YOLO('yolov8n.pt')
             logger.info("yolov8n.pt downloaded and loaded!")
         
+        # Memory optimization: ensure model is on CPU
+        _model.to('cpu')
+        
         # Set up class names
         _model_names = _model.names if hasattr(_model, 'names') else {}
         logger.info(f"Model class names: {_model_names}")
@@ -69,6 +77,9 @@ def get_model():
             # If no 'face' class, use 'person' class (for general object detection)
             _face_class_ids = {i for i, n in _model_names.items() if isinstance(n, str) and n.lower() == 'person'}
         logger.info(f"Face/Person class IDs: {_face_class_ids}")
+        
+        # Clean up memory after loading
+        gc.collect()
         
         return _model
         
@@ -115,6 +126,8 @@ def health_check():
 @face_detection_bp.route('/detect', methods=['POST'])
 def detect_faces():
     try:
+        import gc
+        
         if 'file' not in request.files:
             return jsonify({'success': False, 'error': 'No file uploaded'}), 400
         file = request.files['file']
@@ -126,10 +139,22 @@ def detect_faces():
         
         # Read and process the image
         image_array = _decode_image_from_request(file)
-        logger.info(f"Image shape: {image_array.shape}")
+        logger.info(f"Original image shape: {image_array.shape}")
+        
+        # MEMORY OPTIMIZATION: Reduce image size for inference
+        from PIL import Image
+        h, w = image_array.shape[:2]
+        max_size = 640  # Reduced from potential larger sizes
+        if max(h, w) > max_size:
+            scale = max_size / max(h, w)
+            new_w, new_h = int(w * scale), int(h * scale)
+            image_pil = Image.fromarray(image_array)
+            image_pil = image_pil.resize((new_w, new_h), Image.LANCZOS)
+            image_array = np.array(image_pil)
+            logger.info(f"Resized image shape: {image_array.shape}")
 
-        # Run detection
-        results = model(image_array, conf=0.25, iou=0.6, verbose=False)
+        # Run detection with lower confidence for better detection
+        results = model(image_array, conf=0.2, iou=0.4, verbose=False, device='cpu')
         logger.info(f"Detection results: {len(results[0].boxes) if results and results[0].boxes else 0} boxes")
 
         # Process results
@@ -157,6 +182,9 @@ def detect_faces():
 
         # Convert to base64 for sending to frontend
         img_base64 = _encode_image_to_base64_bgr(annotated_image)
+        
+        # Force garbage collection to free memory
+        gc.collect()
 
         return jsonify({
             'success': True,
@@ -176,6 +204,7 @@ def detect_faces():
 def detect_frame():
     """Process a single frame from live camera feed"""
     try:
+        import gc
         data = request.get_json()
         if not data or 'frame' not in data:
             return jsonify({'success': False, 'error': 'No frame data received'}), 400
@@ -192,12 +221,12 @@ def detect_frame():
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        # Resize frame for faster inference
-        frame_resized = cv2.resize(frame_rgb, (640, 480))
+        # MEMORY OPTIMIZATION: Use smaller resolution for live detection
+        frame_resized = cv2.resize(frame_rgb, (416, 416))  # Smaller than 640x480
 
-        # Run detection
+        # Run detection with optimizations
         t0 = time.time()
-        results = model(frame_resized, conf=0.25, iou=0.6, verbose=False)
+        results = model(frame_resized, conf=0.3, iou=0.4, verbose=False, device='cpu', half=False)
         t1 = time.time()
         fps = 1.0 / (t1 - t0) if (t1 - t0) > 0 else 0
 
@@ -214,7 +243,7 @@ def detect_frame():
                 class_name = _model_names.get(class_id, str(class_id))
 
                 # Minimum box area filter
-                if (x2 - x1) * (y2 - y1) < 100:
+                if (x2 - x1) * (y2 - y1) < 50:
                     continue
 
                 detections.append({
