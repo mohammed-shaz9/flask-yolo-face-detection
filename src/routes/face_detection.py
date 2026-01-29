@@ -6,6 +6,7 @@ import logging
 from flask import Blueprint, request, jsonify
 from PIL import Image
 import base64
+import gc
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -16,264 +17,260 @@ face_detection_bp = Blueprint('face_detection', __name__)
 _routes_dir = os.path.dirname(__file__)
 _project_root = os.path.abspath(os.path.join(_routes_dir, '..', '..'))
 
-# Global model variable - lazy loaded
-_model = None
-_model_names = {}
-_face_class_ids = set()
+# Global model variable
+_session = None
+_input_name = None
+_output_names = None
 
-
-def get_model():
-    """Lazy load the YOLO model on first use with memory optimizations."""
-    global _model, _model_names, _face_class_ids
+def get_session():
+    """Lazy load ONNX Runtime session with auto-export."""
+    global _session, _input_name, _output_names
     
-    if _model is not None:
-        return _model
+    if _session is not None:
+        return _session
     
     try:
-        import gc
-        import torch
-        from ultralytics import YOLO
+        import onnxruntime as ort
         
-        # Force CPU mode to reduce memory usage
-        torch.set_num_threads(1)
+        onnx_path = os.path.join(_project_root, 'best.onnx')
+        pt_path = os.path.join(_project_root, 'best.pt')
         
-        model_path = os.path.join(_project_root, 'best.pt')
-        model_path_fallback = os.path.join(_project_root, 'yolov8n.pt')
+        # Check if ONNX model exists, if not, try to export it
+        if not os.path.exists(onnx_path):
+            logger.info("ONNX model not found. Attempting to export from PyTorch model...")
+            if os.path.exists(pt_path):
+                try:
+                    # Lazy import to avoid memory overhead if not needed
+                    from ultralytics import YOLO
+                    logger.info("Loading YOLO to export...")
+                    model = YOLO(pt_path)
+                    logger.info("Exporting to ONNX...")
+                    model.export(format='onnx', imgsz=416)
+                    logger.info("Export complete!")
+                    
+                    # Force cleanup
+                    del model
+                    import gc
+                    import torch
+                    gc.collect()
+                except Exception as e:
+                    logger.error(f"Failed to export model: {e}")
+            else:
+                logger.error("Neither ONNX nor PyTorch model found!")
+
+        logger.info(f"Looking for ONNX model at: {onnx_path}")
         
-        logger.info(f"Project root: {_project_root}")
-        logger.info(f"Looking for model at: {model_path}")
-        logger.info(f"Model exists: {os.path.exists(model_path)}")
-        logger.info(f"Fallback exists: {os.path.exists(model_path_fallback)}")
+        if not os.path.exists(onnx_path):
+             logger.error("best.onnx could not be loaded!")
+             raise FileNotFoundError("best.onnx missing and export failed")
+
+        # Load ONNX model
+        # Use CPU provider for Render compatibility
+        providers = ['CPUExecutionProvider']
+        _session = ort.InferenceSession(onnx_path, providers=providers)
         
-        # List files in project root for debugging
-        try:
-            files = os.listdir(_project_root)
-            logger.info(f"Files in project root: {files}")
-        except Exception as e:
-            logger.error(f"Could not list project root: {e}")
+        # Get input/output metadata
+        _input_name = _session.get_inputs()[0].name
+        _output_names = [output.name for output in _session.get_outputs()]
         
-        if os.path.exists(model_path):
-            logger.info("Loading best.pt model...")
-            _model = YOLO(model_path)
-            logger.info("best.pt model loaded successfully!")
-        elif os.path.exists(model_path_fallback):
-            logger.info("Loading yolov8n.pt fallback model...")
-            _model = YOLO(model_path_fallback)
-            logger.info("yolov8n.pt model loaded successfully!")
-        else:
-            logger.info("No local model found, downloading yolov8n.pt...")
-            _model = YOLO('yolov8n.pt')
-            logger.info("yolov8n.pt downloaded and loaded!")
-        
-        # Memory optimization: ensure model is on CPU
-        _model.to('cpu')
-        
-        # Set up class names
-        _model_names = _model.names if hasattr(_model, 'names') else {}
-        logger.info(f"Model class names: {_model_names}")
-        
-        _face_class_ids = {i for i, n in _model_names.items() if isinstance(n, str) and 'face' in n.lower()}
-        if not _face_class_ids:
-            # If no 'face' class, use 'person' class (for general object detection)
-            _face_class_ids = {i for i, n in _model_names.items() if isinstance(n, str) and n.lower() == 'person'}
-        logger.info(f"Face/Person class IDs: {_face_class_ids}")
-        
-        # Clean up memory after loading
-        gc.collect()
-        
-        return _model
+        logger.info(f"ONNX model loaded! Input: {_input_name}")
+        return _session
         
     except Exception as e:
-        logger.error(f"Error loading model: {e}")
+        logger.error(f"Error loading ONNX model: {e}")
         import traceback
         logger.error(traceback.format_exc())
         raise
 
+def preprocess(image_array):
+    """Preprocess image for YOLOv8 ONNX (Resize, Normalize, Transpose)."""
+    # Resize to 416x416 (matching export)
+    input_shape = (416, 416)
+    img_h, img_w = image_array.shape[:2]
+    
+    img = cv2.resize(image_array, input_shape)
+    
+    # Normalize (0-255 -> 0.0-1.0)
+    img = img.astype(np.float32) / 255.0
+    
+    # HWC -> CHW (3, 416, 416)
+    img = img.transpose((2, 0, 1))
+    
+    # Add batch dim (1, 3, 416, 416)
+    img = np.expand_dims(img, axis=0)
+    
+    return img, img_w, img_h
+
+def nms(boxes, scores, iou_threshold=0.45):
+    """Non-Maximum Suppression."""
+    # boxes: [x1, y1, x2, y2]
+    indices = cv2.dnn.NMSBoxes(boxes, scores, score_threshold=0.25, nms_threshold=iou_threshold)
+    return indices
+
+def postprocess(outputs, img_w, img_h):
+    """Parse YOLOv8 ONNX output."""
+    # Output shape is typically [1, 5, 3549] (for 1 class + 4 coords)
+    # 4 coords (cx, cy, w, h) + 1 class score (face)
+    
+    output = outputs[0][0]  # Remove batch dim: [5, 3549]
+    
+    # Transpose to [3549, 5]
+    output = output.transpose()
+    
+    boxes = []
+    scores = []
+    class_ids = []
+    
+    # Iterate through predictions
+    # Format: [cx, cy, w, h, score]
+    for row in output:
+        score = row[4]
+        if score < 0.25: # Confidence threshold
+            continue
+            
+        cx, cy, w, h = row[0], row[1], row[2], row[3]
+        
+        # Convert to [x1, y1, x2, y2]
+        x1 = (cx - w/2)
+        y1 = (cy - h/2)
+        x2 = (cx + w/2)
+        y2 = (cy + h/2)
+        
+        # Scale back to original image size
+        # Model input was 416x416
+        x_scale = img_w / 416
+        y_scale = img_h / 416
+        
+        x1 = int(x1 * x_scale)
+        y1 = int(y1 * y_scale)
+        x2 = int(x2 * x_scale)
+        y2 = int(y2 * y_scale)
+        
+        boxes.append([x1, y1, x2-x1, y2-y1]) # cv2 NMS needs [x, y, w, h]
+        scores.append(float(score))
+        class_ids.append(0) # Logic assumes 1 class (face)
+        
+    # Apply NMS
+    indices = nms(boxes, scores)
+    
+    final_detections = []
+    if len(indices) > 0:
+        for i in indices.flatten():
+            box = boxes[i]
+            x, y, w, h = box
+            final_detections.append({
+                'bbox': [x, y, x+w, y+h], # x1, y1, x2, y2
+                'confidence': scores[i],
+                'class': 'face'
+            })
+            
+    return final_detections
 
 def _decode_image_from_request(file_storage):
-    """Decode an uploaded file into an RGB numpy array."""
     image = Image.open(file_storage.stream).convert('RGB')
     return np.array(image)
 
-
 def _encode_image_to_base64_bgr(image_rgb):
-    """Encode an RGB image to base64 after converting to BGR for JPEG encoding."""
     bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
     _, buffer = cv2.imencode('.jpg', bgr)
     return base64.b64encode(buffer).decode('utf-8')
 
-
 @face_detection_bp.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint to verify the API is working."""
     try:
-        model = get_model()
+        session = get_session()
         return jsonify({
             'status': 'healthy',
-            'model_loaded': model is not None,
-            'model_classes': list(_model_names.values()) if _model_names else [],
-            'project_root': _project_root,
-            'files': os.listdir(_project_root) if os.path.exists(_project_root) else []
+            'model': 'ONNX (Lightweight)',
+            'input': _input_name
         })
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e),
-            'project_root': _project_root
-        }), 500
-
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @face_detection_bp.route('/detect', methods=['POST'])
 def detect_faces():
     try:
-        import gc
-        
         if 'file' not in request.files:
             return jsonify({'success': False, 'error': 'No file uploaded'}), 400
         file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'}), 400
-
-        # Get model (lazy load)
-        model = get_model()
         
-        # Read and process the image
         image_array = _decode_image_from_request(file)
-        logger.info(f"Original image shape: {image_array.shape}")
         
-        # MEMORY OPTIMIZATION: Reduce image size for inference
-        from PIL import Image
-        h, w = image_array.shape[:2]
-        max_size = 640  # Reduced from potential larger sizes
-        if max(h, w) > max_size:
-            scale = max_size / max(h, w)
-            new_w, new_h = int(w * scale), int(h * scale)
-            image_pil = Image.fromarray(image_array)
-            image_pil = image_pil.resize((new_w, new_h), Image.LANCZOS)
-            image_array = np.array(image_pil)
-            logger.info(f"Resized image shape: {image_array.shape}")
-
-        # Run detection with lower confidence for better detection
-        results = model(image_array, conf=0.2, iou=0.4, verbose=False, device='cpu')
-        logger.info(f"Detection results: {len(results[0].boxes) if results and results[0].boxes else 0} boxes")
-
-        # Process results
-        detections = []
-        if results and results[0].boxes is not None:
-            boxes = results[0].boxes
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                confidence = float(box.conf[0].cpu().numpy())
-                class_id = int(box.cls[0].cpu().numpy())
-                class_name = _model_names.get(class_id, str(class_id))
-
-                # Filter out extremely small boxes
-                if (x2 - x1) * (y2 - y1) < 100:
-                    continue
-
-                detections.append({
-                    'bbox': [int(x1), int(y1), int(x2), int(y2)],
-                    'confidence': confidence,
-                    'class': class_name
-                })
-
-        # Draw bounding boxes on the image
-        annotated_image = results[0].plot() if results else image_array
-
-        # Convert to base64 for sending to frontend
+        # Preprocess
+        input_tensor, w, h = preprocess(image_array)
+        
+        # Inference
+        session = get_session()
+        outputs = session.run(_output_names, {_input_name: input_tensor})
+        
+        # Postprocess
+        detections = postprocess(outputs, w, h)
+        
+        # Draw boxes
+        annotated_image = image_array.copy()
+        for det in detections:
+            x1, y1, x2, y2 = det['bbox']
+            cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            label = f"{det['class']} {det['confidence']:.2f}"
+            cv2.putText(annotated_image, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
         img_base64 = _encode_image_to_base64_bgr(annotated_image)
-        
-        # Force garbage collection to free memory
         gc.collect()
-
+        
         return jsonify({
             'success': True,
             'detections': detections,
             'total_detections': len(detections),
             'processed_image': f'data:image/jpeg;base64,{img_base64}'
         })
-
+        
     except Exception as e:
         logger.error(f"Detection error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
-
 
 @face_detection_bp.route('/detect_frame', methods=['POST'])
 def detect_frame():
-    """Process a single frame from live camera feed"""
     try:
-        import gc
         data = request.get_json()
-        if not data or 'frame' not in data:
-            return jsonify({'success': False, 'error': 'No frame data received'}), 400
-
-        # Get model (lazy load)
-        model = get_model()
-
-        # Decode base64 frame
-        frame_data = data['frame'].split(',')[1]  # Remove data:image/jpeg;base64, prefix
+        frame_data = data['frame'].split(',')[1]
         frame_bytes = base64.b64decode(frame_data)
-
-        # Convert to numpy array
         nparr = np.frombuffer(frame_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # MEMORY OPTIMIZATION: Use smaller resolution for live detection
-        frame_resized = cv2.resize(frame_rgb, (416, 416))  # Smaller than 640x480
-
-        # Run detection with optimizations
+        
+        # Resize for speed if needed (ONNX is fast though)
+        # Using native resolution for now, or 416x416 consistent with model
         t0 = time.time()
-        results = model(frame_resized, conf=0.3, iou=0.4, verbose=False, device='cpu', half=False)
+        
+        input_tensor, w, h = preprocess(frame_rgb)
+        session = get_session()
+        outputs = session.run(_output_names, {_input_name: input_tensor})
+        detections = postprocess(outputs, w, h)
+        
         t1 = time.time()
         fps = 1.0 / (t1 - t0) if (t1 - t0) > 0 else 0
-
-        # Process results
-        detections = []
-        mode_text = "Mode: Face Detection"
         
-        if results and results[0].boxes is not None:
-            boxes = results[0].boxes
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                confidence = float(box.conf[0].cpu().numpy())
-                class_id = int(box.cls[0].cpu().numpy())
-                class_name = _model_names.get(class_id, str(class_id))
-
-                # Minimum box area filter
-                if (x2 - x1) * (y2 - y1) < 50:
-                    continue
-
-                detections.append({
-                    'bbox': [int(x1), int(y1), int(x2), int(y2)],
-                    'confidence': confidence,
-                    'class': class_name
-                })
-
-        # Draw bounding boxes on the frame
-        annotated_frame = results[0].plot() if results else frame_resized
-
-        # Add FPS and Mode info to the frame
-        cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.putText(annotated_frame, mode_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        cv2.putText(annotated_frame, f"Detections: {len(detections)}", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-
-        # Convert back to base64
+        # Draw
+        annotated_frame = frame_rgb.copy()
+        for det in detections:
+            x1, y1, x2, y2 = det['bbox']
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # Add stats
+        cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(annotated_frame, "Mode: ONNX (Ultra-Light)", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+        
         frame_base64 = _encode_image_to_base64_bgr(annotated_frame)
-
+        gc.collect()
+        
         return jsonify({
             'success': True,
             'detections': detections,
             'total_detections': len(detections),
             'fps': fps,
-            'mode': mode_text,
             'processed_frame': f'data:image/jpeg;base64,{frame_base64}'
         })
-
+        
     except Exception as e:
-        logger.error(f"Frame detection error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Frame error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
