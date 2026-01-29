@@ -2,11 +2,16 @@ import os
 import time
 import cv2
 import numpy as np
+import logging
 from flask import Blueprint, request, jsonify, Response
 from ultralytics import YOLO
 from PIL import Image
 import base64
 import io
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 face_detection_bp = Blueprint('face_detection', __name__)
 
 _routes_dir = os.path.dirname(__file__)
@@ -18,18 +23,38 @@ _predictor = None
 
 _project_root = os.path.abspath(os.path.join(_routes_dir, '..', '..'))
 model_path = os.path.join(_project_root, 'best.pt')
+model_path_fallback = os.path.join(_project_root, 'yolov8n.pt')
 
-if os.path.exists(model_path):
-    model = YOLO(model_path)
-else:
-    # Fallback if best.pt is missing (rare in this flow)
+logger.info(f"Project root: {_project_root}")
+logger.info(f"Looking for model at: {model_path}")
+logger.info(f"Model exists: {os.path.exists(model_path)}")
+
+model = None
+try:
+    if os.path.exists(model_path):
+        logger.info("Loading best.pt model...")
+        model = YOLO(model_path)
+        logger.info("best.pt model loaded successfully!")
+    elif os.path.exists(model_path_fallback):
+        logger.info("Loading yolov8n.pt fallback model...")
+        model = YOLO(model_path_fallback)
+        logger.info("yolov8n.pt model loaded successfully!")
+    else:
+        logger.info("No local model found, downloading yolov8n.pt...")
+        model = YOLO('yolov8n.pt')
+        logger.info("yolov8n.pt downloaded and loaded!")
+except Exception as e:
+    logger.error(f"Error loading model: {e}")
+    # Ultimate fallback
     model = YOLO('yolov8n.pt')
 
 # Names for class filtering
 _names = model.names if hasattr(model, 'names') else {}
+logger.info(f"Model class names: {_names}")
 _face_class_ids = {i for i, n in _names.items() if isinstance(n, str) and 'face' in n.lower()}
 if not _face_class_ids:
     _face_class_ids = {i for i, n in _names.items() if isinstance(n, str) and n.lower() == 'person'}
+logger.info(f"Face/Person class IDs: {_face_class_ids}")
 
 
 def _decode_image_from_request(file_storage):
@@ -64,7 +89,7 @@ def detect_faces():
         # If nothing is found, optionally fall back to a generic model (COCO classes)
         if (not results or results[0].boxes is None or len(results[0].boxes) == 0):
             generic_path = os.path.join(_project_root, 'src', 'yolov8n.pt')
-            if os.path.exists(generic_path) and generic_path != _model_path:
+            if os.path.exists(generic_path) and generic_path != model_path:
                 generic_model = YOLO(generic_path)
                 results = generic_model(image_array, conf=0.25, iou=0.6, verbose=False)
  
