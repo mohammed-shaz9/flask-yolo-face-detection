@@ -11,20 +11,11 @@ face_detection_bp = Blueprint('face_detection', __name__)
 
 _routes_dir = os.path.dirname(__file__)
 
-try:
-    import dlib
-    DLIB_AVAILABLE = True
-except ImportError:
-    DLIB_AVAILABLE = False
+# Dlib logic removed for stability on Render deployment
+DLIB_AVAILABLE = False
+_detector = None
+_predictor = None
 
-# Dlib logic - only initialize if available
-if DLIB_AVAILABLE:
-    _detector = dlib.get_frontal_face_detector()
-    _predictor_path = os.path.join(_routes_dir, 'shape_predictor_68_face_landmarks.dat')
-    _predictor = dlib.shape_predictor(_predictor_path)
-else:
-    _detector = None
-    _predictor = None
 _project_root = os.path.abspath(os.path.join(_routes_dir, '..', '..'))
 model_path = os.path.join(_project_root, 'best.pt')
 
@@ -188,22 +179,8 @@ def detect_frame():
         annotated_frame = results[0].plot() if results else frame_resized
 
         # Convert annotated_frame to grayscale for dlib
-        # Only run if Dlib is available
-        if DLIB_AVAILABLE:
-            gray_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2GRAY)
-    
-            # Iterate through filtered detections and apply dlib landmark detection
-            for detection in detections:
-                x1, y1, x2, y2 = detection['bbox']
-                dlib_rect = dlib.rectangle(x1, y1, x2, y2)
-                try:
-                    landmarks = _predictor(gray_frame, dlib_rect)
-                    for i in range(0, landmarks.num_parts):
-                        x = landmarks.part(i).x
-                        y = landmarks.part(i).y
-                        cv2.circle(annotated_frame, (x, y), 1, (0, 255, 0), -1)  # Green dots for landmarks
-                except Exception:
-                    continue
+        # Dlib landmark detection removed for stability
+
 
         # Add FPS and Mode info to the frame
         cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)

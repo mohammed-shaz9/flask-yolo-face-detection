@@ -1,12 +1,9 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-streamlit
 ultralytics
 torch
 torchvision
 opencv-python-headless
 Pillow
-streamlit-webrtc
-av
 flask
 gunicorn
-dlib
+numpy

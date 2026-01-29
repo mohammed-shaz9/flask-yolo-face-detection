@@ -5,13 +5,11 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies required for OpenCV and dlib
+# Install system dependencies required for OpenCV
 RUN apt-get update && apt-get install -y \
     build-essential \
-    cmake \
     libgl1 \
     libglib2.0-0 \
-    libx11-6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
@@ -26,8 +24,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Expose the standard Streamlit port
-EXPOSE 7860
+# Environment variable for Port (Render sets this)
+ENV PORT=10000
+EXPOSE ${PORT}
 
-# Start the Streamlit application
-CMD ["gunicorn", "--bind", "0.0.0.0:7860", "src.main:app"]
+# Start the Flask application using Gunicorn
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} src.main:app"]
